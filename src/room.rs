@@ -54,6 +54,13 @@ impl Room {
         player_joined_buf.resize(8, 0);
         player_joined_buf.extend_from_slice(&client.nickname);
         let player_joined_buf: Arc<[u8]> = Arc::from(player_joined_buf);
+        if let Some(client) = self.clients.first_mut() {
+            client
+                .message_tx
+                .send(Message::Command(Command { cmd: commands::REQUEST_STATE, payload: Default::default() }))
+                .await
+                .ok();
+        }
         self.clients.push(client);
         for c in &mut self.clients {
             let cmd = if c.id == id { commands::YOUJOINED } else { commands::PLAYERJOINED };
@@ -104,6 +111,11 @@ impl Room {
                             },
                         },
                         Payload::Data(ref data) => match command.cmd {
+                            commands::LOADSTATE => {
+                                for c in &mut self.clients {
+                                    c.message_tx.send(Message::Command(command.clone())).await.ok();
+                                }
+                            },
                             commands::TEXT => {
                                 let text_buf = data;
                                 let client = &self.clients[i];
