@@ -1,7 +1,8 @@
 use crate::types::{
-    commands, ClientData, Command, GameID, GameInfo, JoinRequest, Message, Payload, MAX_CLIENTS_PER_GAME,
+    commands, ClientData, Command, GameID, GameInfo, JoinRequest, Message, Payload, MAX_CLIENTS_PER_GAME, MAX_NICK_LEN,
 };
 use futures::stream::{FuturesUnordered, StreamExt};
+use rand::prelude::*;
 use std::{collections::HashMap, sync::Arc};
 use tokio::{
     sync::{mpsc, oneshot},
@@ -38,11 +39,49 @@ impl Room {
         room
     }
 
+    fn nickname_is_unique(&self, nick: &[u8]) -> bool {
+        let case_insensitive_eq = |other: &[u8]| {
+            other.len() == nick.len()
+                && other.iter().zip(nick).all(|(&a, &b)| {
+                    let a = if a >= b'a' && a <= b'z' { a + b'A' - b'a' } else { a };
+                    let b = if b >= b'a' && b <= b'z' { b + b'A' - b'a' } else { b };
+                    a == b
+                })
+        };
+        for c in &self.clients {
+            if case_insensitive_eq(&c.nickname) {
+                return false
+            }
+        }
+        return true
+    }
+
+    fn clean_nickname(&self, nick: &mut Vec<u8>) {
+        if let Some(len) = nick.iter().position(|&c| c == b'<' || c == b'>' || c == b'*' || c < 0x20) {
+            nick.resize(len, 0);
+        }
+        if nick.is_empty() || !self.nickname_is_unique(nick) {
+            while !self.nickname_is_unique(nick) {
+                let mut rng = rand::thread_rng();
+                nick.clear();
+                for _ in 0..MAX_NICK_LEN.min(8) {
+                    let c = (rng.gen::<u8>() as u16 * (26 * 2 - 1)).to_be_bytes()[0];
+                    if c < 26 {
+                        nick.push(b'A' + c);
+                    } else {
+                        nick.push(b'a' + c - 26);
+                    }
+                }
+            }
+        }
+    }
+
     async fn add_client(&mut self, request: JoinRequest) {
         // verify game info before this
         let mut client = request.client_data;
         let id = self.clients.iter().map(|c| c.id).max().unwrap_or(0) + 1;
         client.id = id;
+        self.clean_nickname(&mut client.nickname);
         self.controllers
             .iter_mut()
             .filter(|x| x.owners.is_empty())
