@@ -54,6 +54,12 @@ pub enum Payload {
     Data(Arc<[u8]>),
 }
 
+impl Default for Payload {
+    fn default() -> Self {
+        Payload::Number(0)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Command {
     pub cmd: u8,
