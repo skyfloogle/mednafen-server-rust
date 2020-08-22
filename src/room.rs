@@ -181,6 +181,27 @@ impl Room {
                                 };
                                 self.clients[i].message_tx.send(Message::Command(command)).await.ok();
                             },
+                            commands::SETNICK => {
+                                let mut nick = data.to_vec();
+                                self.clean_nickname(&mut nick);
+                                let old_nick = std::mem::replace(&mut self.clients[i].nickname, nick);
+                                let nick = &self.clients[i].nickname;
+                                let mut name_change_buf = Vec::with_capacity(old_nick.len() + nick.len() + 2);
+                                name_change_buf.extend_from_slice(&old_nick);
+                                name_change_buf.push(b'\n');
+                                name_change_buf.extend_from_slice(&nick);
+                                name_change_buf.push(0);
+                                let name_change_buf: Arc<[u8]> = name_change_buf.into();
+                                for c in &mut self.clients {
+                                    c.message_tx
+                                        .send(Message::Command(Command {
+                                            cmd: commands::NICKCHANGED,
+                                            payload: Payload::Data(name_change_buf.clone()),
+                                        }))
+                                        .await
+                                        .ok();
+                                }
+                            },
                             commands::QUIT => {
                                 // TODO: use quit message
                                 self.clients[i].dead = true;
