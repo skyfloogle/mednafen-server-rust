@@ -232,6 +232,12 @@ impl Room {
                                         .ok();
                                 }
                             },
+                            commands::SET_MEDIA => {
+                                // TODO: length must equal 16
+                                for c in &mut self.clients {
+                                    c.message_tx.send(Message::Command(command.clone())).await.ok();
+                                }
+                            },
                             commands::QUIT => {
                                 // TODO: use quit message
                                 self.clients[i].dead = true;
