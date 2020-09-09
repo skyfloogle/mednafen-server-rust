@@ -266,7 +266,9 @@ impl Room {
             {
                 let mut i = 0;
                 while i < self.clients.len() {
-                    if self.clients[i].message_tx.send(Message::AllGamepads(inputs.clone())).await.is_err() {
+                    if self.clients[i].dead
+                        || self.clients[i].message_tx.send(Message::AllGamepads(inputs.clone())).await.is_err()
+                    {
                         dead_clients.push(self.clients.remove(i));
                     } else {
                         i += 1;
