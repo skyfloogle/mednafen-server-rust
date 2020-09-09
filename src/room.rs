@@ -108,6 +108,13 @@ impl Room {
                 .await
                 .ok();
         }
+        for (_, buf) in self.get_player_list_bufs() {
+            client
+                .message_tx
+                .send(Message::Command(Command { cmd: commands::PLAYERJOINED, payload: buf.into() }))
+                .await
+                .ok();
+        }
         let player_joined_buf = self.make_player_announce_buf(&client);
         self.clients.push(client);
         for c in &mut self.clients {
@@ -153,6 +160,20 @@ impl Room {
                                 // TODO: limit to 1-130 fps
                                 self.interval =
                                     time::interval(time::Duration::from_secs_f64(FPS_FACTOR / f64::from(n)));
+                            },
+                            commands::REQUEST_LIST => {
+                                for (id, buf) in self.get_player_list_bufs().collect::<Vec<_>>() {
+                                    let cmd = if self.clients[i].id == id {
+                                        commands::YOUJOINED
+                                    } else {
+                                        commands::PLAYERJOINED
+                                    };
+                                    self.clients[i]
+                                        .message_tx
+                                        .send(Message::Command(Command { cmd, payload: buf.into() }))
+                                        .await
+                                        .ok();
+                                }
                             },
                             cmd => {
                                 println!("Unknown command {:#x}", cmd);
