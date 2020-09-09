@@ -76,6 +76,19 @@ impl Room {
         }
     }
 
+    fn make_player_announce_buf(&self, client: &ClientData) -> Arc<[u8]> {
+        let mut buf = Vec::with_capacity(4 + 4 + client.nickname.len());
+        buf.extend_from_slice(&self.make_mps(client.id).to_le_bytes());
+        buf.resize(8, 0);
+        buf.extend_from_slice(&client.nickname);
+        buf.into()
+    }
+
+    // (id, buf)
+    fn get_player_list_bufs<'a>(&'a self) -> impl Iterator<Item = (usize, Arc<[u8]>)> + 'a {
+        self.clients.iter().map(move |c| (c.id, self.make_player_announce_buf(c)))
+    }
+
     async fn add_client(&mut self, request: JoinRequest) {
         // verify game info before this
         let mut client = request.client_data;
@@ -88,11 +101,6 @@ impl Room {
             .take(request.local_players)
             .for_each(|x| x.owners.push(id));
         client.local_input_size_tx.send(self.get_controller_buffer_size(id)).await.ok();
-        let mut player_joined_buf = Vec::with_capacity(4 + 4 + client.nickname.len());
-        player_joined_buf.extend_from_slice(&self.make_mps(id));
-        player_joined_buf.resize(8, 0);
-        player_joined_buf.extend_from_slice(&client.nickname);
-        let player_joined_buf: Arc<[u8]> = Arc::from(player_joined_buf);
         if let Some(client) = self.clients.first_mut() {
             client
                 .message_tx
@@ -100,6 +108,7 @@ impl Room {
                 .await
                 .ok();
         }
+        let player_joined_buf = self.make_player_announce_buf(&client);
         self.clients.push(client);
         for c in &mut self.clients {
             let cmd = if c.id == id { commands::YOUJOINED } else { commands::PLAYERJOINED };
@@ -256,14 +265,14 @@ impl Room {
         self.controllers.iter().filter(|c| c.owners.contains(&player_id)).map(|c| c.size).sum()
     }
 
-    fn make_mps(&self, player_id: usize) -> [u8; 4] {
+    fn make_mps(&self, player_id: usize) -> u32 {
         let mut mps = 0u32;
         self.controllers
             .iter()
             .enumerate()
             .filter(|(_, c)| c.owners.contains(&player_id))
             .for_each(|(i, _)| mps |= 1 << i);
-        mps.to_le_bytes()
+        mps
     }
 }
 
