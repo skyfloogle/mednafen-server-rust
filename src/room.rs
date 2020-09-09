@@ -260,24 +260,38 @@ impl Room {
                 }
             }
             let inputs: Arc<[u8]> = inputs.into();
-            // send inputs and mark dead clients
-            for c in &mut self.clients {
-                if c.message_tx.send(Message::AllGamepads(inputs.clone())).await.is_err() {
-                    c.dead = true;
+            let mut dead_clients = Vec::new();
+            // send inputs and collect dead clients
+            // i would LOVE to use drain_filter for this but i want this to work on stable
+            {
+                let mut i = 0;
+                while i < self.clients.len() {
+                    if self.clients[i].message_tx.send(Message::AllGamepads(inputs.clone())).await.is_err() {
+                        dead_clients.push(self.clients.remove(i));
+                    } else {
+                        i += 1;
+                    }
                 }
             }
-            // remove dead clients
-            // i would use drain_filter for this but i want this to work on stable
-            let controllers = &mut self.controllers;
-            self.clients.retain(|cl| {
-                if cl.dead {
-                    controllers.iter_mut().for_each(|co| co.owners.retain(|&id| id != cl.id));
+            if !dead_clients.is_empty() {
+                // quit if everyone left
+                if self.clients.is_empty() {
+                    return
                 }
-                !cl.dead
-            });
-            // quit if everyone left
-            if self.clients.is_empty() {
-                return
+                // send quit messages and take back controllers
+                for dead_client in &dead_clients {
+                    let announce_buf = self.make_player_announce_buf(&dead_client);
+                    for c in &mut self.clients {
+                        c.message_tx
+                            .send(Message::Command(Command {
+                                cmd: commands::PLAYERLEFT,
+                                payload: announce_buf.clone().into(),
+                            }))
+                            .await
+                            .ok();
+                    }
+                    self.controllers.iter_mut().for_each(|co| co.owners.retain(|&id| id != dead_client.id));
+                }
             }
         }
     }
