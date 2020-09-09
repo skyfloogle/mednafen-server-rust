@@ -60,6 +60,18 @@ impl Default for Payload {
     }
 }
 
+impl From<Vec<u8>> for Payload {
+    fn from(buf: Vec<u8>) -> Self {
+        Self::Data(buf.into())
+    }
+}
+
+impl From<Arc<[u8]>> for Payload {
+    fn from(buf: Arc<[u8]>) -> Self {
+        Self::Data(buf)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Command {
     pub cmd: u8,
