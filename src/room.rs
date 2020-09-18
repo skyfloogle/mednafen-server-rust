@@ -161,6 +161,72 @@ impl Room {
                                 self.interval =
                                     time::interval(time::Duration::from_secs_f64(FPS_FACTOR / f64::from(n)));
                             },
+                            commands::CTRL_CHANGE_ACK => {
+                                // TODO
+                                unimplemented!()
+                            },
+                            commands::CTRLR_TAKE | commands::CTRLR_DROP | commands::CTRLR_DUPE => {
+                                let client_id = self.clients[i].id;
+                                let mut err: Option<&[u8]> = None;
+                                if n > (1 << self.controllers.len()) - 1 {
+                                    err = Some(b"Nonexistent controller(s) specified.");
+                                } else if command.cmd == commands::CTRLR_DROP && (n & self.make_mps(client_id)) != n {
+                                    err = Some(b"Controller(s) you don't have control of specified.");
+                                }
+                                if let Some(err) = err {
+                                    self.clients[i]
+                                        .message_tx
+                                        .send(Message::Command(Command {
+                                            cmd: commands::TEXT,
+                                            payload: Payload::Data(Arc::from(err)),
+                                        }))
+                                        .await
+                                        .ok();
+                                    continue
+                                }
+                                self.clients[i].changes_pending += 1;
+                                let mut changed_clients = Vec::new();
+                                for (i, c) in self.controllers.iter_mut().enumerate() {
+                                    if (n & (1 << i)) != 0 {
+                                        if command.cmd == commands::CTRLR_TAKE {
+                                            changed_clients.extend(c.owners.drain(..));
+                                        }
+                                        if command.cmd == commands::CTRLR_DROP {
+                                            c.owners.retain(|&id| id != client_id);
+                                        } else if !c.owners.contains(&client_id) {
+                                            c.owners.push(client_id);
+                                        }
+                                    }
+                                }
+                                if command.cmd == commands::CTRLR_TAKE {
+                                    for j in 0..self.clients.len() {
+                                        if self.clients[j].id != client_id
+                                            && changed_clients.contains(&self.clients[j].id)
+                                        {
+                                            self.clients[j].changes_pending += 1;
+                                            let mps = self.make_mps(self.clients[j].id);
+                                            self.clients[j]
+                                                .message_tx
+                                                .send(Message::Command(Command {
+                                                    cmd: commands::CTRL_CHANGE,
+                                                    payload: Payload::Number(mps),
+                                                }))
+                                                .await
+                                                .ok();
+                                        }
+                                    }
+                                }
+                                let mps = self.make_mps(client_id);
+                                self.clients[i]
+                                    .message_tx
+                                    .send(Message::Command(Command {
+                                        cmd: commands::CTRL_CHANGE,
+                                        payload: Payload::Number(mps),
+                                    }))
+                                    .await
+                                    .ok();
+                                // TODO: send out notifs
+                            },
                             commands::REQUEST_LIST => {
                                 for (id, buf) in self.get_player_list_bufs().collect::<Vec<_>>() {
                                     let cmd = if self.clients[i].id == id {
@@ -249,6 +315,7 @@ impl Room {
                     }
                 }
             }
+
             // collect inputs
             let mut inputs = vec![0; self.controllers.iter().map(|c| c.size).sum()];
             for c in self.clients.iter_mut().filter(|c| c.changes_pending == 0) {
