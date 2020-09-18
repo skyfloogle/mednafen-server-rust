@@ -98,6 +98,7 @@ pub async fn manage_client(
                 id: 0, // set by the room
                 dead: false,
                 nickname: login_data.nickname,
+                changes_pending: 0,
                 controller_buffer: controller_buffer.clone(),
                 command_rx,
                 message_tx,

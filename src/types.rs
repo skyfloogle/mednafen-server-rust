@@ -33,6 +33,7 @@ pub struct ClientData {
     pub id: usize, // set by the room
     pub dead: bool,
     pub nickname: Vec<u8>,
+    pub changes_pending: usize,
     pub controller_buffer: Arc<parking_lot::Mutex<Vec<u8>>>, // client -> room
     pub command_rx: mpsc::Receiver<Command>,                 // client -> room
     pub message_tx: mpsc::Sender<Message>,                   // room -> client

@@ -251,7 +251,7 @@ impl Room {
             }
             // collect inputs
             let mut inputs = vec![0; self.controllers.iter().map(|c| c.size).sum()];
-            for c in &mut self.clients {
+            for c in self.clients.iter_mut().filter(|c| c.changes_pending == 0) {
                 let local_buf = c.controller_buffer.lock();
                 let mut local_offset = 0usize;
                 let mut global_offset = 0usize;
